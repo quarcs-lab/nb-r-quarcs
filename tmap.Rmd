@@ -1,0 +1,454 @@
+---
+title: "Making maps in R:"
+subtitle: "Using the sf and tmap Packages"
+author: "Carlos Mendez"
+output:
+  html_document:
+    keep_md: yes
+    code_download: true
+    df_print: paged
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 4
+    number_sections: true
+    code_folding: "show"
+    theme: "cosmo"
+    highlight: "monochrome"
+  html_notebook:
+    code_folding: show
+    highlight: monochrome
+    number_sections: yes
+    theme: cosmo
+    toc: yes
+    toc_depth: 4
+    toc_float:
+      collapsed: no
+      smooth_scroll: no
+  pdf_document: default
+  word_document: default
+  github_document: default
+always_allow_html: true
+---
+
+
+<style>
+h1.title {font-size: 18pt; color: DarkBlue;} 
+body, h1, h2, h3, h4 {font-family: "Palatino", serif;}
+body {font-size: 12pt;}
+/* Headers */
+h1,h2,h3,h4,h5,h6{font-size: 14pt; color: #00008B;}
+body {color: #333333;}
+a, a:hover {color: #8B3A62;}
+pre {font-size: 12px;}
+</style>
+
+
+Suggested Citation: 
+
+> Mendez C. (2020).  Making maps in R: Using the sf and tmap Packages. R Studio/RPubs. Available at <https://rpubs.com/quarcs-lab/tutorial-maps-in-r>
+
+This work is licensed under the Creative Commons Attribution-Share Alike 4.0 International License. 
+
+
+
+# Libraries
+
+```{r message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE)
+
+library(tidyverse)  # Modern data science workflow
+library(sf)         # Simple features for R
+library(tmap)       # Thematic Maps
+library(tmaptools)  # Thematic Maps Tools
+library(RColorBrewer) # ColorBrewer Palettes
+library(leaflet)    # Interactive web maps
+library(rgdal)      # Bindings for the Geospatial Data Abstraction Library
+library(rgeos)      # Interface to Geometry Engine - Open Source 
+
+
+# Change the presentation of decimal numbers to 4 and avoid scientific notation
+options(prompt="R> ", digits=4, scipen=999)
+```
+
+# Tutorial objectives
+
+- Load spatial data files into R 
+- Join non-spaital data to spatial data files
+- Create simple choropleth maps
+
+
+# Preliminary material
+
+- [Creating thematic maps in R](https://youtu.be/krcRR98C2Z0)
+    - [Github repository](https://github.com/mtennekes/tmap-workshop)
+
+- [Making maps with R](https://geocompr.robinlovelace.net/adv-map.html)
+
+
+# Replication files
+
+- If you are a member of the [QuaRCS lab](https://quarcs-lab.rbind.io/), you can run this tutorial in [R Studio Cloud](https://rstudio.cloud/spaces/15597/project/971780).
+
+## Data
+
+- [Non-spatial](https://github.com/quarcs-lab/tutorial-maps-in-r/blob/master/DATASET.zip?raw=true)
+- [Spatial](https://github.com/quarcs-lab/tutorial-maps-in-r/blob/master/MAP.zip?raw=true) 
+- [Combined](https://github.com/quarcs-lab/tutorial-maps-in-r/blob/master/turkey_admin1_merge3_all.zip?raw=true)
+
+# Orginal data sources
+
+The non-spatial datafile is from: 
+
+- Öcal, N., & Yildirim, J. (2010). [Regional effects of terrorism on economic growth in Turkey: A geographically weighted regression approach.](https://journals.sagepub.com/doi/abs/10.1177/0022343310364576) Journal of Peace Research, 47(4), 477-489.
+
+The spatial (shapefile) is from: 
+
+- [Matthew C. Ingram](http://mattingram.net/)
+
+
+# Import the data
+
+
+## Non-spatial data
+
+```{r}
+dat <-read.csv("data/DATASET.csv")
+```
+
+### Explore the data
+
+```{r}
+glimpse(dat) 
+```
+
+#### Definitions of variables
+
+- growth: growth rate of per capita real income 1987-2001
+- base: lograrithm of the per apita income in the base year 1987
+- T: average terrorism index
+- E: average years of schooling
+- G: real per capita government expenditures in 1987
+- Coastal: dummy variable  which takes the value of one if the province is a coastal province.
+
+
+
+## Spatial data
+
+```{r}
+mapData <- read_sf("data/MAP.shp")
+```
+
+### Explore the data
+
+```{r}
+glimpse(mapData)
+```
+
+- Check the Coordinate Reference System
+
+```{r}
+st_crs(mapData)
+```
+
+
+# Transform the data
+
+No need to transform any data because both datasets share a common variable `id`
+
+
+# Merge the data
+
+
+```{r}
+dat_map <- inner_join(
+  dat,
+  mapData,
+  by = "id"
+)
+```
+
+## Keep data as sf object
+
+- Keep the data as sf class, so we will not lose the coodinate system
+
+```{r}
+dat_map <- st_as_sf(dat_map)
+st_crs(mapData)
+```
+
+```{r}
+glimpse(dat_map)
+```
+
+
+
+# Plot Thematic Maps
+
+
+## Quick Map 
+
+- A quick map of the Terrorism variable
+
+```{r}
+qtm(dat_map, fill = "T")
+```
+
+
+## Simple Map
+
+```{r}
+tm_shape(dat_map) + tm_fill("T") 
+```
+
+
+## Remove frame
+
+```{r}
+tm_shape(dat_map) + 
+  tm_fill("T") +
+  tm_layout(frame = FALSE)
+```
+
+
+## Set legend outside
+
+```{r}
+tm_shape(dat_map) + tm_fill("T") +
+  tm_layout(legend.outside = TRUE, frame = FALSE)
+```
+
+## Set legend size
+
+```{r}
+tm_shape(dat_map) + tm_fill("T") +
+  tm_layout(legend.outside = TRUE, frame = FALSE) +
+  tm_legend(text.size = 0.3) 
+```
+
+
+
+## Set color palette
+
+See color reference [here](https://www.datanovia.com/en/blog/the-a-z-of-rcolorbrewer-palette/)
+
+```{r}
+tm_shape(dat_map) + 
+  tm_fill("T", palette = "Greens") +
+  tm_layout(legend.outside = TRUE, frame = FALSE)
+```
+
+```{r}
+tm_shape(dat_map) + 
+  tm_fill("T", palette = "-Greens") +
+  tm_layout(legend.outside = TRUE, frame = FALSE)
+```
+
+
+```{r}
+tm_shape(dat_map) + 
+  tm_fill("T", palette = "viridis") +
+  tm_layout(legend.outside = TRUE, frame = FALSE)
+```
+
+
+## Add polygon names
+
+```{r}
+tm_shape(dat_map) + 
+  tm_fill("T", palette = "viridis") +
+  tm_layout(legend.outside = TRUE, frame = FALSE) +
+  tm_text("province", size = "Shape_Area",  auto.placement = F, legend.size.show = FALSE) 
+```
+
+
+
+[Documentation](https://rdrr.io/cran/tmap/man/tm_text.html)
+
+## Add scale bar
+
+```{r}
+tm_shape(dat_map) + 
+  tm_fill("T", palette = "viridis") +
+  tm_layout(legend.outside = TRUE, frame = FALSE) +
+  tm_text("province", size = "Shape_Area",  auto.placement = F, legend.size.show = FALSE)  + 
+  tm_scale_bar(position = c("RIGHT", "BOTTOM"))
+```
+
+
+## Set color intervals
+
+Enter “style =” followed by one of the options below.
+
+- equal: divides the range of the variable into n parts.
+- pretty: chooses a number of breaks to fit a sequence of equality spaced ‘round’ values. 
+- quantile: equal number of cases in each group
+- jenks: looks for natural breaks in the data
+- cat: when the variable is categorical 
+
+```{r}
+tm_shape(dat_map) + 
+  tm_fill("T",
+          style = "quantile",
+          palette = "Reds"
+    ) +
+  tm_layout(
+    legend.outside = TRUE,
+    frame = FALSE)
+```
+
+Change the number of intervals in the color scheme and how the intervals are spaced. Changing the number of intervals n = 7. So, we have 7 shades instead of the default 5.
+
+```{r}
+tm_shape(dat_map) + 
+  tm_fill("T",
+          style = "quantile",
+          n = 7,
+          palette = "Reds"
+    ) +
+  tm_layout(
+    legend.outside = TRUE,
+    frame = FALSE)
+```
+
+
+
+## Add histogram
+
+```{r}
+tm_shape(dat_map) + 
+  tm_fill("T",
+          style = "quantile",
+          n = 5,
+          palette = "YlOrBr",
+          legend.hist = TRUE
+    ) +
+  tm_layout(
+    legend.outside = TRUE,
+    frame = FALSE)
+```
+
+
+## Add borders
+
+You can edit the borders of the shapefile with the tm_borders() function which has many arguments. alpha denotes the level of transparency on a scale from 0 to 1 where 0 is completely transparent.
+
+```{r}
+tm_shape(dat_map) + 
+  tm_fill("T",
+          style = "quantile",
+          palette = "Blues"
+    ) + 
+  tm_borders(alpha=.4) +
+  tm_layout(
+    legend.outside = TRUE,
+    frame = FALSE)
+```
+
+## Add compass
+
+```{r}
+tm_shape(dat_map) + 
+  tm_fill("T",
+          style = "quantile",
+          palette = "viridis"
+    ) + 
+  tm_borders(alpha=.4) + 
+  tm_compass(type = "8star", 
+              position = c("RIGHT", "BOTTOM"),
+              show.labels = 2,
+              text.size = 0.35) +
+  tm_layout(legend.outside = TRUE,
+            frame = FALSE)
+```
+
+[Documentation](https://www.rdocumentation.org/packages/tmap/versions/2.3-2/topics/tm_compass)
+
+
+## Edit the layout
+
+```{r}
+tm_shape(dat_map) + 
+  tm_fill("T",
+          palette = "viridis",
+          style = "quantile",
+          title = "Terrorist Attacks"
+          ) + 
+tm_borders(alpha=.4) + 
+tm_layout(
+  legend.text.size = 0.7,
+  legend.title.size = 1,
+  legend.position = c("right", "bottom"),
+  legend.outside = TRUE,
+  frame = FALSE
+  ) 
+```
+
+[Documentation](https://www.rdocumentation.org/packages/tmap/versions/2.3-2/topics/tm_layout)
+
+## Interactive map
+
+
+```{r}
+tmap_mode("view")
+
+tm_shape(dat_map) + 
+  tm_fill("T",
+          palette = "viridis",
+          id="province",
+          popup.vars=c("T", "growth", "base", "E", "G")
+          ) + 
+	tm_legend(outside=TRUE) +
+  tm_layout(frame = FALSE) 
+
+tmap_mode("plot")
+```
+
+
+[Documentation](https://rdrr.io/cran/tmap/man/tm_view.html)
+
+# Save a new shapefile
+
+```{r eval=FALSE}
+st_write(dat_map, "dat_map.shp")
+```
+
+
+# Other tutorials
+
+- [ECS530: (IV) Visualization of spatial data](https://rsbivand.github.io/ECS530_h19/ECS530_IV.html)
+
+- [Practical 5: Making maps in R](https://data.cdrc.ac.uk/tutorial/aa5491c9-cbac-4026-97c9-f9168462f4ac/70c4bc61-0475-4806-9240-4ef1fa649a06)
+
+- [Making maps with R](https://geocompr.robinlovelace.net/adv-map.html)
+
+- [Chapter 8 Solutions](https://geocompr.github.io/geocompkg/articles/solutions08.html)
+
+# References
+
+- <https://rdrr.io/cran/tmap/>
+
+- [Tennekes, M., 2018, tmap: Thematic Maps in R, Journal of Statistical Software, 84(6), 1-39](https://doi.org/10.18637/jss.v084.i06)
+
+- <https://marcinstepniak.eu/post/interactive-choropleth-maps-with-r-and-tmap-part-i/>
+
+
+- [Modern Geospatial Data Analysis with R](http://files.zevross.com/workshops/spatial/slides/html/0-deck-list.html)
+
+- [Webinar on Spatial Data Analysis with R](https://www.r-bloggers.com/incase-you-missed-it-my-webinar-on-spatial-data-analysis-with-r/)
+
+- <https://tlorusso.github.io/geodata_workshop/tmap_package>
+
+- <https://rstudio-pubs-static.s3.amazonaws.com/229482_b5b182f650434a36ace4eeef2d2bcd83.html#17>
+
+- <https://mran.microsoft.com/snapshot/2017-12-11/web/packages/tmap/vignettes/tmap-nutshell.html>
+
+- [Chapter 8 Solutions](https://geocompr.github.io/geocompkg/articles/solutions08.html)
+
+- [Geocomputation with R website](https://geocompr.github.io/)
+
+- <https://bookdown.org/lexcomber/brunsdoncomber2e/>
+
+
+END
