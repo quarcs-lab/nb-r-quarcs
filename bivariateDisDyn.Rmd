@@ -1,0 +1,606 @@
+---
+title: "Bivariate distribution dynamics analysis in R"
+subtitle: ""
+author: "Carlos Mendez"
+output: 
+  html_notebook:
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 4
+    number_sections: true
+    code_folding: "hide"
+    theme: "cosmo"
+    highlight: "monochrome"
+    df_print: "kable"
+  github_document: default
+  pdf_document: default
+  word_document: default
+  html_document:
+    code_download: true
+    df_print: paged
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 4
+    number_sections: true
+    code_folding: "show"
+    theme: "cosmo"
+    highlight: "monochrome"
+always_allow_html: true
+---
+
+<style>
+h1.title {font-size: 18pt; color: DarkBlue;} 
+body, h1, h2, h3, h4 {font-family: "Palatino", serif;}
+body {font-size: 12pt;}
+/* Headers */
+h1,h2,h3,h4,h5,h6{font-size: 14pt; color: #00008B;}
+body {color: #333333;}
+a, a:hover {color: #8B3A62;}
+pre {font-size: 12px;}
+</style>
+
+Suggested citation: 
+
+> Mendez C. (2020). Bivariate distribution dynamics analysis in R. R Studio/RPubs. Available at <https://rpubs.com/quarcs-lab/tutorial-bivariate-distribution-dynamics>
+
+This work is licensed under the Creative Commons Attribution-Non Commercial-Share Alike 4.0 International License. 
+
+
+Acknowledgment:
+
+Material adapted from multiple sources, in particular the dataset is from [Magrini (2007).](https://pdfs.semanticscholar.org/eab1/cb89dde0c909898b0a43273377c5dfa73ebc.pdf)
+
+
+# Replication files
+
+- The tutorial is self-contained. No aditional file is needed.
+
+- If you are a member of the [QuaRCS lab](https://quarcs-lab.rbind.io/), you can run this tutorial in [R Studio Cloud](https://rstudio.cloud/spaces/15597/project/984266 ) 
+
+
+# Libraries
+
+```{r message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(skimr)
+library(kableExtra)    # html tables 
+library(pdfCluster)    # density based clusters
+library(hdrcde)        # conditional density estimation 
+library(plotly)
+
+library(intoo)
+library(barsurf)
+library(bivariate)
+
+library(np)
+
+library(basetheme)
+basetheme("minimal")
+
+library(viridis)
+library(ggpointdensity)
+library(isoband)
+
+#library(MASS)
+library(KernSmooth)
+
+
+# Change the presentation of decimal numbers to 4 and avoid scientific notation
+options(prompt="R> ", digits=2, scipen=999)
+
+```
+
+# Tutorial objectives
+
+- Study the dynamics of univariate densities
+
+- Compute the bandwidth of a density
+
+- Study mobility plots
+
+- Study bi-variate densities
+
+- Study density-based clustering methods
+
+- Study conditional bi-variate densities
+
+
+
+# Import data
+
+
+We will use two hypothetical cross-sectional series.
+
+- The first (`x`) series was produced by drawing a random sample of 1000 observations from a univariate normal distribution. 
+- The second (`y`) series was produced by merging and sorting two random samples of 500 observations.
+
+The mean and the standard deviation of these two series respectively matched those of the logarithm of per capita Gross Value Added observed for the Italian Provinces in 1996 and in 2002. For this reason assume  that the analysis has been performed over a 6-year time period. 
+
+
+```{r message=FALSE, warning=TRUE}
+dat <- read_csv("https://raw.githubusercontent.com/ds777/sample-datasets/master/simData.csv")
+```
+
+
+# Transform data
+
+
+Since the data is in log terms, let us rename the variables and add new variables.
+
+```{r}
+dat <- dat %>% 
+  rename(log_x = x, log_y = y) %>% 
+  mutate(x = exp(log_x), y = exp(log_y)) %>% 
+  select(x, y, everything()) 
+```
+
+```{r}
+dat <- dat %>% 
+  mutate(
+    rel_x = x/mean(x),
+    rel_y = y/mean(y),
+    rel_log_x = log_x/mean(log_x),
+    rel_log_y = log_x/mean(log_y),
+  )
+dat
+```
+
+
+
+# Descriptive statistics
+
+```{r}
+skim(dat) %>% 
+  kable() %>% 
+  kable_styling()
+```
+
+
+
+
+# Univariate dynamics
+
+## Select bandwiths
+
+select bandwidth based on function `dpik` from the package `KernSmooth`
+
+```{r}
+h_rel_x <- dpik(dat$rel_x)
+h_rel_x
+```
+
+
+```{r}
+h_rel_y <- dpik(dat$rel_y)
+h_rel_y
+```
+
+## Plot each density
+
+```{r}
+dis_rel_x <- bkde(dat$rel_x, bandwidth = h_rel_x)
+dis_rel_x <- as.data.frame(dis_rel_x)
+ggplot(dis_rel_x, aes(x, y)) + geom_line() + 
+  theme_minimal() 
+```
+
+
+```{r}
+dis_rel_y <- bkde(dat$rel_y, bandwidth = h_rel_y)
+dis_rel_y <- as.data.frame(dis_rel_y)
+ggplot(dis_rel_y, aes(x, y)) + geom_line() + 
+  theme_minimal() 
+```
+
+
+## Plot both densities
+
+### Method 1
+
+Keep the orignal bandwiths of the package `KernSmooth`
+
+```{r}
+domain_initial <- dis_rel_x$x
+domain_final   <- dis_rel_y$x
+
+density_initial <- dis_rel_x$y
+density_final   <- dis_rel_y$y
+
+densities <- cbind(domain_initial, density_initial, domain_final, density_final)
+
+densities <-  as.data.frame(densities)
+```
+
+
+```{r}
+densities_plot <- densities %>% 
+  ggplot()+
+  theme_minimal()+
+  geom_line(aes(domain_initial, density_initial))+
+  geom_line(aes(domain_final,density_final), linetype = "dashed")+
+ labs(subtitle = "",
+       x = "Relative Variable",
+       y = "Density") + 
+  geom_label(
+    label="Year 2002", 
+    x= 1.525,
+    y= 0.9,
+    label.size = 0.35,
+    color = "black",
+  ) +
+   geom_label(
+    label="Year 1996", 
+    x= 1.75,
+    y= 0.2,
+    label.size = 0.35,
+    color = "black",
+  )
+densities_plot
+```
+
+Note that you have adjust the labels manually
+
+- Interactive plotly version
+
+```{r}
+densities_plot2 <- densities %>% 
+  ggplot()+
+  theme_minimal()+
+  geom_line(aes(domain_initial, density_initial))+
+  geom_line(aes(domain_final,density_final), linetype = "dashed")+
+ labs(subtitle = "",
+       x = "Relative Variable",
+       y = "Density") 
+
+ggplotly(densities_plot2)
+```
+
+Manual labels are not yet implemented in the `ggplotly` function
+
+
+### Method 2
+
+using the bandwidth default of ggplot 
+
+
+```{r}
+rel_x <- dat %>% 
+  select(rel_x) %>% 
+  rename(rel_var = rel_x) %>% 
+  mutate(year = 1996)
+```
+
+```{r}
+rel_y <- dat %>% 
+  select(rel_y) %>% 
+  rename(rel_var = rel_y) %>% 
+  mutate(year = 2002)
+```
+
+```{r}
+rel_xy <- bind_rows(rel_x, rel_y)
+```
+ 
+```{r}
+rel_xy <- rel_xy %>% 
+  mutate(year = as.factor(year))
+head(rel_xy)
+```
+ 
+ 
+
+```{r}
+dis_rel_xy <- ggplot(rel_xy, aes(x=rel_var, color=year)) +
+  geom_density() + 
+  theme_minimal() 
+dis_rel_xy
+```
+
+
+Using plotly
+
+```{r}
+ggplotly(dis_rel_xy)
+```
+
+
+
+# Bivariate density
+
+## Mobility scatterplot
+
+```{r}
+dat %>% 
+  ggplot(aes(x = rel_x, y = rel_y)) +
+  geom_point(alpha=0.5) +
+  geom_abline(aes(intercept = 0, slope = 1)) +
+  geom_hline(yintercept = 1, linetype="dashed") + 
+  geom_vline(xintercept = 1, linetype="dashed") +
+  theme_minimal() +
+  labs(subtitle = "Relative y",
+       x = "Relative x",
+       y = "") +
+  theme(text=element_text(family="Palatino")) 
+```
+
+
+Fit a non-linear function
+
+```{r}
+dat %>% 
+  ggplot(aes(x = rel_x, y = rel_y)) +
+  geom_point(alpha=0.5) + 
+  geom_smooth() + 
+  geom_abline(aes(intercept = 0, slope = 1)) +
+  geom_hline(yintercept = 1, linetype="dashed") + 
+  geom_vline(xintercept = 1, linetype="dashed") +
+  theme_minimal() +
+  labs(subtitle = "Relative y",
+       x = "Relative x",
+       y = "") +
+  theme(text=element_text(family="Palatino")) 
+```
+
+Not that the nonlinear fit crosses the 45-degree line two times from above.
+
+## Using geom_pointdensity 
+
+```{r}
+dat %>% 
+ggplot(aes(x = rel_x, y = rel_y)) +
+  geom_pointdensity() +
+  scale_color_viridis() +
+  geom_abline(aes(intercept = 0, slope = 1)) +
+  geom_hline(yintercept = 1, linetype="dashed") + 
+  geom_vline(xintercept = 1, linetype="dashed") +
+  theme_minimal() +
+  labs(subtitle = "Relative y") + 
+  xlab("Relative x") +
+  ylab("")
+```
+
+
+##  Using the KernSmooth package
+
+```{r}
+xy <- cbind(dat$rel_x, dat$rel_y)
+xy_dis <- bkde2D(xy, bandwidth = c(h_rel_x, h_rel_y)) 
+```
+
+```{r}
+contour(xy_dis$x1, xy_dis$x2, xy_dis$fhat)
+abline(a=0, b=1)
+abline(h=1, v=1)
+```
+
+Interactive
+
+```{r}
+plot_ly(x=xy_dis$x1, y=xy_dis$x2, z=xy_dis$fhat, type = "contour", contours = list(showlabels = TRUE))  %>%
+  colorbar(title = "Density")
+```
+
+
+
+```{r}
+persp(xy_dis$fhat)
+```
+
+Interactive version
+
+```{r}
+plot_ly(x=xy_dis$x1, y=xy_dis$x2, z=xy_dis$fhat) %>% add_surface()
+```
+
+
+## Using the Bivariate package
+
+```{r}
+bivariate <- kbvpdf(dat$rel_x, dat$rel_y, h_rel_x, h_rel_y) 
+```
+
+
+```{r}
+plot(bivariate,
+      xlab="Relative x", 
+      ylab="Relative y")
+abline(a=0, b=1)
+abline(h=1, v=1)
+```
+
+
+```{r}
+plot(bivariate,
+      TRUE,
+      xlab="Relative x", 
+      ylab="Relative y")
+```
+
+
+## Using ggplot (stat_density_2d())
+
+```{r}
+dat %>% 
+  ggplot(aes(x = rel_x, y = rel_y)) +
+  geom_point(color = "lightgray") + 
+  geom_smooth() + 
+  #geom_smooth(method=lm, se=FALSE) + 
+  stat_density_2d() +
+  geom_abline(aes(intercept = 0, slope = 1)) +
+  geom_hline(yintercept = 1, linetype="dashed") + 
+  geom_vline(xintercept = 1, linetype="dashed") +
+  theme_minimal() +
+  labs(subtitle = "Relative y",
+       x = "Relative x",
+       y = "") +
+  theme(text=element_text(family="Palatino")) 
+```
+
+
+
+```{r}
+dat %>% 
+  ggplot(aes(x = rel_x, y = rel_y)) +
+        stat_density_2d(aes(fill = stat(nlevel)), geom = "polygon") + 
+  scale_fill_viridis_c() +
+        geom_abline(aes(intercept = 0, slope = 1)) +
+        geom_hline(yintercept = 1, linetype="dashed") + 
+        geom_vline(xintercept = 1, linetype="dashed") + 
+  theme_minimal() +
+        labs(x = "Relative X",
+             y = "Relative Y") +
+        theme(text=element_text(size=8, family="Palatino"))
+```
+
+
+# Density-based clusters
+
+
+```{r}
+xy_cluster <- pdfCluster(dat[, 5:6]) 
+summary(xy_cluster)
+```
+
+## Core clusters
+
+```{r}
+plot(xy_cluster, 
+      stage = 0,
+      which = 3,
+      frame = F)
+abline(a=0, b=1)
+abline(h=1, v=1)
+```
+
+
+## Full clustering
+
+```{r}
+plot(xy_cluster, 
+      which = 3,
+      frame = F)
+abline(a=0, b=1)
+abline(h=1, v=1)
+```
+
+## Cluster tree
+
+```{r}
+plot(xy_cluster, which = 2)
+```
+
+## Mode function
+
+```{r}
+plot(xy_cluster, which = 1)
+```
+
+
+# Conditional density analysis
+
+## Using the `hdrcde` package
+
+```{r}
+xy_cde <- cde(dat$rel_x, dat$rel_y)
+```
+
+Increase the number of intervals to 60
+
+```{r}
+xy_cde2 <- cde(dat$rel_x, dat$rel_y, nxmargin = 60)
+```
+
+
+```{r}
+plot(xy_cde)
+```
+
+
+```{r}
+plot(xy_cde2)
+```
+
+
+High density regions
+
+
+```{r}
+plot(xy_cde, plot.fn="hdr")
+abline(a=0, b=1)
+abline(h=1, v=1)
+```
+
+
+
+```{r}
+plot(xy_cde2, plot.fn="hdr")
+abline(a=0, b=1)
+abline(h=1, v=1)
+```
+
+
+## Using the `np` package
+
+Compute adaptive bandwith based on cross-validation
+
+
+```{r}
+bw_c_ad_cv <- npcdensbw(
+  formula = dat$rel_y ~ dat$rel_x, 
+  bwtype = "adaptive_nn") 
+```
+
+```{r}
+summary(bw_c_ad_cv)
+```
+
+Compute conditional density object
+
+```{r}
+cdist_bwCV <- npcdens(bws = bw_c_ad_cv)
+summary(cdist_bwCV)
+```
+
+
+```{r}
+## Better copy and paste it in the console because it is an animation
+# plot(bw_c_ad_cv)
+```
+
+
+```{r}
+plot(cdist_bwCV, 
+      xtrim = -0.2, 
+      view = "fixed",
+      main = "",
+      theta=350,
+      phi=20)
+```
+
+
+
+
+# References
+
+- [Magrini, S. (2007). Analysing convergence through the distribution dynamics approach: why and how?. University Ca'Foscari of Venice, Dept. of Economics Research Paper Series No, 13. ](https://pdfs.semanticscholar.org/eab1/cb89dde0c909898b0a43273377c5dfa73ebc.pdf)
+
+- Mendez C. (2020). Classical sigma and beta convergence analysis in R: Using the REAT 2.1 Package. R Studio/RPubs. Available at https://rpubs.com/quarcs-lab/classical-convergence-reat21
+
+- Mendez C. (2020). Univariate distribution dynamics in R: Using the ggridges package. R Studio/RPubs. Available at https://rpubs.com/quarcs-lab/univariate-distribution-dynamics
+
+- [Mendez, C. (2020) Regional efficiency convergence and efficiency clusters. Asia-Pacific Journal of Regional Science, 1-21.](http://em.rdcu.be/wf/click?upn=lMZy1lernSJ7apc5DgYM8YThSI5bKW06znW3BanO-2FRs-3D_u6a2PqF3vslNNtSRbhxJPcJKxO5EKzOsf0-2FWiizN57d4csF7ReMur5e40TbX48DbSe9kEMCwFpvvFpLcuaVB-2BpdC3fLCbsP0iKcsxIs1dv1yrPsGDCNh5bhgvI8-2F-2Bxwz7upjDgycqPbhObNqkT41uqY3dPiXr5vBoY1xwT88MA3-2FbdJgwoBl1Gnzli13mkmlJj0kqTs-2BllVfCTB356mLjjKR2VBZCUgKbyVpYgu1vXjwTwdOyzd5FTbU8eaRsWyORje7WCPpGEKCUAvbeTCSPa2rfdkmnkQIrsmYBSqfSZ8aaWzHwIkMU3hxbIU6nHGQ) 
+
+- [Mendez, C. (2019). Lack of Global Convergence and the Formation of Multiple Welfare Clubs across Countries: An Unsupervised Machine Learning Approach. Economies, 7(3), 74.](https://www.mdpi.com/2227-7099/7/3/74/pdf)
+
+- Mendez, C. (2019). Overall efficiency, pure technical efficiency, and scale efficiency across provinces in Indonesia 1990 and 2010. R Studio/RPubs. Available at https://rpubs.com/quarcs-lab/efficiency-clusters-indonesia-1990-2010
+
+- [Mendez-Guerra, C. (2018). On the distribution dynamics of human development: Evidence from the metropolitan regions of Bolivia''. Economics Bulletin, 38(4), 2467-2475.](http://www.accessecon.com/Pubs/EB/2018/Volume38/EB-18-V38-I4-P223.pdf)
+
+
+END

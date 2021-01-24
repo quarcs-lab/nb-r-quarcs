@@ -1,0 +1,267 @@
+---
+title: "Univariate distribution dynamics in R:"
+subtitle: "Using the ggridges Package"
+author: "Carlos Mendez"
+output: 
+  html_notebook:
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    toc_depth: 4
+    number_sections: true
+    code_folding: "show"
+    theme: "cosmo"
+    highlight: "monochrome"
+    df_print: "kable"
+  github_document: default
+always_allow_html: true
+---
+
+
+<style>
+h1.title {font-size: 18pt; color: DarkBlue;} 
+body, h1, h2, h3, h4 {font-family: "Palatino", serif;}
+body {font-size: 12pt;}
+/* Headers */
+h1,h2,h3,h4,h5,h6{font-size: 14pt; color: #00008B;}
+body {color: #333333;}
+a, a:hover {color: #8B3A62;}
+pre {font-size: 12px;}
+</style>
+
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(ConvergenceClubs) # convergence clubs
+library(ggridges)
+
+# Change the presentation of decimal numbers to 4 and avoid scientific notation
+options(prompt="R> ", digits=4, scipen=999)
+```
+
+
+
+Suggested Citation: 
+
+> Mendez Carlos (2020). Univariate distribution dynamics in R: Using the ggridges package. R Studio/RPubs. Available at <https://rpubs.com/quarcs-lab/univariate-distribution-dynamics>
+
+This work is licensed under the Creative Commons Attribution-Share Alike 4.0 International License. 
+
+
+# Load the Data
+
+Let us use a [dataset](https://rdrr.io/cran/ConvergenceClubs/man/GDP.html) containing the per-capita GDP of 152 Countries over the 1970-2003 period. The data is from the package [`ConvergenceClubs`](https://rdrr.io/cran/ConvergenceClubs/api/)
+
+```{r}
+data(GDP)
+GDP
+```
+
+# Data transformations
+
+## Pivot from wide to long
+
+```{r}
+dat_long <- GDP %>% 
+  pivot_longer(
+    cols = starts_with("Y"),
+    names_prefix = "Y",
+    names_to = "year",
+    values_to = "GDPpc"
+  )
+dat_long
+```
+
+
+## Take the log of GPDpc
+
+```{r}
+dat_long <- dat_long %>% 
+  mutate(
+    ln_GPDpc = log(GDPpc)
+  )
+```
+
+## Focus on the last the years
+
+```{r}
+dat_long <- dat_long %>% 
+  filter(
+    year >= 1998
+  )
+```
+
+
+
+# Plot distribution dynamics
+
+
+```{r}
+dat_long %>% 
+  ggplot(aes(x = ln_GPDpc, y = year)) +
+  geom_density_ridges() +
+  theme_ridges()
+```
+
+
+## Scale parameter
+
+A setting of `scale=1` means the tallest density curve just touches the baseline of the next higher one.  
+
+```{r}
+dat_long %>% 
+  ggplot(aes(x = ln_GPDpc, y = year)) +
+  geom_density_ridges(scale = 1) + 
+  theme_ridges()
+```
+
+
+Larger `scale` values create more overlap.
+
+
+```{r}
+dat_long %>% 
+  ggplot(aes(x = ln_GPDpc, y = year)) +
+  geom_density_ridges(scale = 10) + 
+  theme_ridges()
+```
+
+## Fill colors
+
+```{r}
+dat_long %>% 
+  ggplot(aes(x = ln_GPDpc, y = year, fill = stat(x))) +
+  geom_density_ridges_gradient(scale = 10) +
+  scale_fill_viridis_c(name = "Ln of GPDpc") +
+  theme_ridges()
+```
+
+## Map the probabilities directly onto color.
+
+
+```{r}
+dat_long %>% 
+  ggplot(aes(
+    x = ln_GPDpc,
+    y = year,
+    fill =  0.5 - abs(0.5 - stat(ecdf))
+            )
+        ) +
+stat_density_ridges(
+  geom = "density_ridges_gradient",
+  calc_ecdf = TRUE,
+  scale = 10
+                    ) +
+  scale_fill_viridis_c(name = "Tail probability",
+                       direction = -1) +
+  theme_ridges()
+```
+
+
+
+
+## Indicate quantiles
+
+### Median
+
+```{r}
+dat_long %>% 
+  ggplot(aes(x = ln_GPDpc, y = year)) +
+  stat_density_ridges(quantile_lines = TRUE, 
+                      quantiles = 2,
+                      scale = 10) +
+  theme_ridges()
+```
+
+
+### Any quantile
+
+```{r}
+dat_long %>% 
+  ggplot(aes(x = ln_GPDpc, y = year)) +
+  stat_density_ridges(quantile_lines = TRUE, 
+                      quantiles = c(0.025, 0.975),
+                      scale = 10,
+                      alpha = 0.7) +
+  theme_ridges()
+```
+
+### Color by Quartile
+
+
+```{r}
+dat_long %>% 
+  ggplot(aes(x = ln_GPDpc,
+             y = year,
+             fill = factor(stat(quantile))
+             )
+         ) +
+  stat_density_ridges(
+    geom = "density_ridges_gradient", 
+    calc_ecdf = TRUE,
+    quantiles = 4, 
+    quantile_lines = TRUE,
+    scale = 10
+    ) +
+  scale_fill_viridis_d(name = "Quartiles") +
+  theme_ridges()
+```
+
+
+## Further modifications
+
+```{r}
+dat_long %>% 
+  ggplot(aes(x = ln_GPDpc,
+             y = year,
+             fill = factor(stat(quantile))
+             )
+         ) +
+  stat_density_ridges(
+    geom = "density_ridges_gradient", 
+    calc_ecdf = TRUE,
+    quantiles = 4, 
+    quantile_lines = TRUE,
+    scale = 10
+    ) +
+  scale_fill_viridis_d(name = "Quartiles") +
+  theme_ridges() +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_discrete(expand = c(0, 0)) +
+  coord_cartesian(clip = "off") 
+```
+
+
+```{r}
+dat_long %>% 
+  ggplot(aes(x = ln_GPDpc,
+             y = year,
+             fill = factor(stat(quantile))
+             )
+         ) +
+  stat_density_ridges(
+    geom = "density_ridges_gradient", 
+    calc_ecdf = TRUE,
+    quantiles = 4, 
+    quantile_lines = TRUE,
+    scale = 10
+    ) +
+  scale_fill_viridis_d(name = "Quartiles") +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_discrete(expand = c(0, 0)) +
+  coord_cartesian(clip = "off") + 
+  theme_ridges(grid = FALSE, center_axis_labels = TRUE)
+```
+
+
+# References
+
+- <https://wilkelab.org/ggridges/>
+- <https://wilkelab.org/ggridges/articles/introduction.html>
+
+END
